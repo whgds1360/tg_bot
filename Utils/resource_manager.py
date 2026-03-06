@@ -1,45 +1,81 @@
 from __future__ import annotations
-from dotenv import load_dotenv
-from typing import final, Final
 from pathlib import Path
-from pydantic import BaseModel, field_validator, Field
+from typing import Final, final, Dict, Optional
+from dotenv import load_dotenv
 from os import getenv
 from re import match
+from pydantic import BaseModel, field_validator, Field, ConfigDict
+from json import load
 
 
 @final
 class Resources(BaseModel):
     """
-    Получение ресурсов
+    Конфигурация бота: токен + тексты сообщений
     """
+    model_config = ConfigDict(
+        extra='ignore',           # Если передаем лишние поля их игнорим
+        frozen=True,              # После создания экземпляра его нельзя изменять
+        validate_default=False,    # Проводим валидацию для дефолтных значений
+    )
+
     # Константы
-    DEFAULT_CONFIG_NAME: Final[str] = "Config.env"
-    PATH_TO_CONFIG: Final[str] = Path(DEFAULT_CONFIG_NAME)
+    DEFAULT_ENV_FILE: Final[Path] = Path("config.env")
+    DEFAULT_TEXT_FILE: Final[Path] = Path("text_config.json")
 
-    # Базовые настройки окна
-    token_key: str = Field(default=None, repr=True, init=True)
+    token: Optional[str] = Field(default=None, repr=False)
 
-    @field_validator("token_key")
+    start_text: Optional[str] = Field(default=None, repr=False)
+    help_text:  Optional[str] = Field(default=None, repr=False)
+    menu_text:  Optional[str] = Field(default=None, repr=False)
+
+    @field_validator("token", mode='before')
     @classmethod
-    def validate_token(cls, value: str) -> str:
-        # Паттерн для токена Telegram
-        pattern = r'^\d+:[A-Za-z0-9_-]+$'
+    def validate_token(cls, value: str | None) -> str:
+        if not value:
+            raise ValueError("Токен бота не указан")
 
+        pattern = r'^\d+:[A-Za-z0-9_-]{35}$'
         if not match(pattern, value):
-            raise ValueError("Некорректный формат токена")
-
-        # Проверить длину второй части (обычно 35 символов)
-        parts = value.split(':')
-        if len(parts) != 2 or len(parts[1]) != 35:
-            raise ValueError("Некорректная структура токена")
+            raise ValueError(
+                "Некорректный формат токена. Ожидается: числа: 35символов_из_букв_цифр_и_подчёркиваний"
+            )
 
         return value
 
     @classmethod
-    def from_config_file(cls, path_to_config_file: Path = PATH_TO_CONFIG) -> Resources:
-        """Создать конфигурацию из файла"""
-        try:
-            load_dotenv(path_to_config_file)
-            return cls(token_key=getenv('TOKEN'))
-        except FileNotFoundError:
-            return cls()
+    def from_files(cls, env_path: Path | None = None, text_path: Path | None = None) -> Resources:
+        """
+        Загружает конфигурацию из .env и json-файла с текстами
+        """
+        env_path = env_path or cls.DEFAULT_ENV_FILE
+        text_path = text_path or cls.DEFAULT_TEXT_FILE
+
+        # Загружаем ENV
+        if env_path.is_file():
+            load_dotenv(env_path)
+        else:
+            print(f"Предупреждение: файл окружения не найден")
+
+        token = getenv("TOKEN").strip()
+
+        # Загружаем JSON
+        texts: Dict[str, str] = {}
+        if text_path.is_file():
+            try:
+                with text_path.open("r", encoding="utf-8") as f:
+                    texts = load(f)  # json.load → dict
+            except Exception as e:
+                print(f"Ошибка чтения текстов: {text_path} - {e}")
+        else:
+            print(f"Предупреждение: файл с текстами не найден - {text_path}")
+
+        # Формируем словарь для Pydantic
+        data = {
+            "token": token,
+            "start_text": texts.get("start", None),
+            "help_text":  texts.get("help",  None),
+            "menu_text":  texts.get("menu",  None),
+        }
+
+        return cls.model_validate(data)
