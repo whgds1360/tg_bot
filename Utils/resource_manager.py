@@ -6,6 +6,7 @@ from os import getenv
 from re import match
 from pydantic import BaseModel, field_validator, Field, ConfigDict
 from json import load
+from loguru import logger
 
 
 @final
@@ -43,32 +44,47 @@ class Resources(BaseModel):
 
         return value
 
+    @staticmethod
+    def __load_json(text_path: Optional[Path]) -> Optional[Dict[str, str]]:
+        """
+        Загрузка текста из json
+        """
+        texts = None
+        if text_path.exists():
+            try:
+                with text_path.open("r", encoding="utf-8") as f:
+                    texts = load(f)  # json.load → dict
+            except Exception as e:
+                logger.warning(f"Ошибка чтения текстов: {text_path} - {e}")
+        else:
+            logger.warning(f"Предупреждение: файл с текстами не найден - {text_path}")
+
+        return texts
+
+    @staticmethod
+    def __load_text(env_path: Optional[Path]) -> None:
+        """
+        Загрузка из env
+        """
+        if env_path.exists():
+            load_dotenv(env_path)
+        else:
+            logger.warning("Предупреждение: файл окружения не найден")
+
     @classmethod
-    def from_files(cls, env_path: Path | None = None, text_path: Path | None = None) -> Resources:
+    def from_files(cls, env_path: Optional[Path] = None, text_path: Optional[Path] = None) -> Resources:
         """
         Загружает конфигурацию из .env и json-файла с текстами
         """
         env_path = env_path or cls.DEFAULT_ENV_FILE
         text_path = text_path or cls.DEFAULT_TEXT_FILE
 
-        # Загружаем ENV
-        if env_path.is_file():
-            load_dotenv(env_path)
-        else:
-            print(f"Предупреждение: файл окружения не найден")
-
+        # Получение токена
+        cls.__load_text(env_path=env_path)
         token = getenv("TOKEN").strip()
 
-        # Загружаем JSON
-        texts: Dict[str, str] = {}
-        if text_path.is_file():
-            try:
-                with text_path.open("r", encoding="utf-8") as f:
-                    texts = load(f)  # json.load → dict
-            except Exception as e:
-                print(f"Ошибка чтения текстов: {text_path} - {e}")
-        else:
-            print(f"Предупреждение: файл с текстами не найден - {text_path}")
+        # Получение текстов
+        texts = cls.__load_json(text_path=text_path)
 
         # Формируем словарь для Pydantic
         data = {
@@ -78,4 +94,7 @@ class Resources(BaseModel):
             "menu_text":  texts.get("menu",  None),
         }
 
-        return cls.model_validate(data)
+        try:
+            return cls.model_validate(data)
+        except AttributeError:
+            return cls()
