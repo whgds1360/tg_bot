@@ -1,10 +1,11 @@
 from loguru import logger
 import asyncio
-from Utils.resource_manager import Resources
+from utils.resource_manager import Resources
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from Handlers.all_routers import all_routers
+from routers.all_routers import all_routers
+from callback_routers.callback_routers import callback_routers
 
 
 # Подгрузка из конфига
@@ -21,6 +22,10 @@ async def main() -> None:
     # Включения роутеров
     for router in all_routers:
         dp.include_router(router)
+
+    for callback_router in callback_routers:
+        dp.include_router(callback_router)
+
     # Старт прослушивания
     logger.info('Запуск бота ...')
     try:

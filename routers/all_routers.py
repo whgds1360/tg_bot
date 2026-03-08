@@ -1,6 +1,6 @@
-from Handlers.menu import menu_router
-from Handlers.start import start_router
-from Handlers.help import help_router
+from routers.menu import menu_router
+from routers.start import start_router
+from routers.help import help_router
 
 
 # Здесь хранится список всех роутеров
